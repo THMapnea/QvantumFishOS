@@ -59,6 +59,8 @@ puts:
     pop si      
     ret         
 
+
+
 main:
     mov ax, 0
     mov ds, ax
@@ -81,6 +83,7 @@ main:
 
 .halt
     jmp .halt
+
 
 
 msg_q1 db ' ___                   _                   _____ _     _      ___  ____', ENDL, 0

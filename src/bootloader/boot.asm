@@ -38,7 +38,7 @@ nop                                                ; Pad to ensure BPB starts at
 bdb_oem:                    db 'MSWIN4.1'          ; OEM identifier (8 bytes)
 bdb_bytes_per_sector:       dw 512                 ; Sector size in bytes
 bdb_sectors_per_cluster:    db 1                   ; Sectors per cluster
-bdb_reserved_sector:        dw 1                   ; Reserved sectors (bootloader)
+bdb_reserved_sectors:       dw 1                   ; Reserved sectors (bootloader)
 bdb_fat_count:              db 2                   ; Number of FAT copies
 bdb_dir_entries_count:      dw 0E0h                ; Root directory entries
 bdb_total_sectors:          dw 2880                ; Total sectors (1.44MB)
@@ -50,10 +50,10 @@ bdb_hidden_sectors:         dd 0                   ; Hidden sectors
 bdb_large_sector_count:     dd 0                   ; Large sector count
 
 ; Extended Boot Record
-ebd_drive_number:           db 0                   ; Drive number (0 = floppy)
+ebr_drive_number:           db 0                   ; Drive number (0 = floppy)
                             db 0                   ; Reserved
 ebr_signature:              db 29h                 ; Signature
-ebr_volume_id:              db 13h, 17h, 33h, 69h  ; Volume ID (serial number)
+ebr_volume_id:              db 12h, 34h, 56h, 78h  ; Volume ID (serial number)
 ebr_volume_label:           db 'QvantumFish'       ; Volume label (11 bytes)
 ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 
@@ -110,11 +110,11 @@ main:
 
     ; Initialize stack
     mov ss, ax
-    mov sp, 0x7C00          ; Stack grows downward from 0x7C00
+    mov sp, 0x7C00 - 256        ; Stack grows downward from 0x7C00 and some space below
 
 
 ;let's read some data from the disk
-    mov [ebd_drive_number], dl 
+    mov [ebr_drive_number], dl 
     mov ax, 1               ;second sector from the disk
     mov cl, 1               ;1 sector to read
     mov bx, 0x7E00          ;data should be after the bootloader
@@ -124,6 +124,7 @@ main:
     ; Display welcome message
     mov si, msg_welcome
     call puts
+    jmp wait_key_and_reboot ;call the function to keep the system waiting
 
 ; =============================================================================
 ; ERROR HANDLING ROUTINES
@@ -138,7 +139,8 @@ wait_key_and_reboot:
     mov ah, 0                          ; BIOS function: wait for keypress
     int 16h                            ; Call BIOS keyboard service
     jmp 0FFFFh:0                       ; Jump to BIOS reset vector (reboot system)
-    hlt                                ; Halt execution (safety measure)
+    cli                                ; disabel interrupt
+    hlt                                ; halt execution
 
 ; =============================================================================
 ; SYSTEM CONTROL FUNCTIONS

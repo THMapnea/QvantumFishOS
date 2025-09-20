@@ -85,8 +85,8 @@ start:
 ;   ds:si - pointer to string to print
 
 puts:
-    push si
-    push ax
+    push si                 ; push the si value in the stack to save it
+    push ax                 ; push the ax value in the stack to save it
 
 .loop:
     lodsb                   ; Load byte from [si] into al, increment si
@@ -97,12 +97,12 @@ puts:
     mov bh, 0               ; Video page 0
     int 0x10                ; BIOS call
 
-    jmp .loop
+    jmp .loop               ; jmp back and continue
 
 .done:
-    pop ax
-    pop si
-    ret
+    pop ax                  ; restore ax value from the stack
+    pop si                  ;vrestore si value from the stack
+    ret                     ; return from the routine
 
 
 
@@ -112,27 +112,27 @@ puts:
 
 main:
     ; Initialize data segments
-    mov ax, 0
-    mov ds, ax
-    mov es, ax
+    mov ax, 0                   ; load 0 in the accumulator register to initialize
+    mov ds, ax                  ; set the data segment register to 0
+    mov es, ax                  ; set the extra segment register to 0
 
     ; Initialize stack
-    mov ss, ax
-    mov sp, 0x7C00 - 256        ; Stack grows downward from 0x7C00 and some space below
+    mov ss, ax                  ; set the stack pointer to 0
+    mov sp, 0x7C00              ; Stack grows downward from 0x7C00
 
 
-;let's read some data from the disk
-    mov [ebr_drive_number], dl 
-    mov ax, 1               ;second sector from the disk
-    mov cl, 1               ;1 sector to read
-    mov bx, 0x7E00          ;data should be after the bootloader
-    call disk_read          ;call the function
+; let's read some data from the disk
+    mov [ebr_drive_number], dl  ;move the extended boot record drive number in the dl for reading
+    mov ax, 1                   ; second sector from the disk
+    mov cl, 1                   ; 1 sector to read
+    mov bx, 0x7E00              ; data should be after the bootloader
+    call disk_read              ; call the function
 
 
     ; Display welcome message
-    mov si, msg_welcome
-    call puts
-    jmp wait_key_and_reboot ;call the function to keep the system waiting
+    mov si, msg_welcome         ; load the message in the si register
+    call puts                   ; call the function
+    jmp wait_key_and_reboot     ; call the function to keep the system waiting
 
 
 
@@ -210,10 +210,10 @@ lba_to_chs:
 
 disk_read:
     push ax                             ; Save registers that will be modified
-    push bx 
-    push cx
-    push dx
-    push di
+    push bx                             ; Save registers that will be modified
+    push cx                             ; Save registers that will be modified
+    push dx                             ; Save registers that will be modified
+    push di                             ; Save registers that will be modified
 
     push cx                             ; Save sector count (will be modified by lba_to_chs)
     call lba_to_chs                     ; Convert LBA to CHS format
@@ -241,10 +241,10 @@ disk_read:
     popa                                ; Restore registers saved by pusha
     
     pop di                              ; Restore original register values
-    pop dx 
-    pop cx
-    pop bx
-    pop ax
+    pop dx                              ; Restore original register values
+    pop cx                              ; Restore original register values
+    pop bx                              ; Restore original register values
+    pop ax                              ; Restore original register values
     ret                                 ; Return from function
 
 

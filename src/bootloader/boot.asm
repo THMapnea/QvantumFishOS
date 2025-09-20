@@ -122,15 +122,7 @@ main:
 
 
     ; Display welcome message
-    mov si, msg_q1
-    call puts
-    mov si, msg_q2
-    call puts
-    mov si, msg_q3
-    call puts
-    mov si, msg_q4
-    call puts
-    mov si, msg_q5
+    mov si, msg_welcome
     call puts
 
 ; =============================================================================
@@ -255,12 +247,7 @@ disk_reset:
 ; DATA SECTION - MESSAGES
 ; =============================================================================
 
-msg_q1 db '  ___                   _                   _____ _     _      ___  ____', ENDL, 0
-msg_q2 db ' / _ \__   ____ _ _ __ | |_ _   _ _ __ ___ |  ___(_)___| |__  / _ \/ ___| ', ENDL, 0
-msg_q3 db '| | | \ \ / / _  |  _ \| __| | | |  _   _ \| |_  | / __|  _ \| | | \___ \ ', ENDL, 0
-msg_q4 db '| |_| |\ V / (_| | | | | |_| |_| | | | | | |  _| | \__ \ | | | |_| |___) |', ENDL, 0
-msg_q5 db ' \__\_\ \_/ \__ _|_| |_|\__|\__ _|_| |_| |_|_|   |_|___/_| |_|\___/|____/ ', ENDL, 0
-
+msg_welcome db 'welcome to QvantumFishOS', ENDL, 0
 msg_floppy_read_failed db 'Failed to read from floppy', ENDL, 0
 
 ; =============================================================================

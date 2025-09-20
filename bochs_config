@@ -16,5 +16,8 @@ boot: floppy
 # Disable mouse
 mouse: enabled=0
 
+#disbale speaker cause of error
+speaker: enabled=0
+
 # Select display library
 display_library: sdl2

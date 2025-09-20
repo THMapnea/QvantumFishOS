@@ -20,4 +20,4 @@ mouse: enabled=0
 speaker: enabled=0
 
 # Select display library
-display_library: sdl2
+display_library: sdl2, options="gui_debug"

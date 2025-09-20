@@ -1,0 +1,25 @@
+Bochs VGABios (PCI) current-svn 16 Aug 2021
+This VGA/VBE Bios is released under the GNU LGPL
+
+Please visit :
+ . http://bochs.sourceforge.net
+ . http://www.nongnu.org/vgabios
+
+Bochs VBE Display Adapter enabled
+
+Bochs 2.7 BIOS - build: 08/01/21
+$Revision: 14314 $ $Date: 2021-07-14 18:10:19 +0200 (Mi, 14. Jul 2021) $
+Options: apmbios pcibios pnpbios eltorito rombios32
+
+
+Press F12 for boot menu.
+
+Booting from Floppy...
+welcome to QvantumFishOS
+ß
+
+
+
+
+
+

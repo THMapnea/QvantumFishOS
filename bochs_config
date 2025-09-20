@@ -16,8 +16,5 @@ boot: floppy
 # Disable mouse
 mouse: enabled=0
 
-# Disable speaker
-plugin_ctrl: speaker=0
-
 # Select display library
 display_library: sdl2

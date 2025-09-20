@@ -1,1 +1,1 @@
-bochs -f bochs_configw
+bochs -f bochs_config

@@ -112,6 +112,15 @@ main:
     mov ss, ax
     mov sp, 0x7C00          ; Stack grows downward from 0x7C00
 
+
+;let's read some data from the disk
+    mov [ebd_drive_number], dl 
+    mov ax, 1               ;second sector from the disk
+    mov cl, 1               ;1 sector to read
+    mov bx, 0x7E00          ;data should be after the bootloader
+    call disk_read          ;call the function
+
+
     ; Display welcome message
     mov si, msg_q1
     call puts
@@ -230,11 +239,17 @@ disk_read:
     pop ax
     ret                                 ; Return from function
 
-; Disk reset function (to be implemented)
-; Resets disk controller between read attempts
+
 disk_reset:
-    ; TODO: Implement disk reset functionality
-    ret                                 ; Return (placeholder)
+    pusha 
+    mov ah, 0
+    stc
+    int 13h
+    jc floppy_error
+    popa
+    ret
+
+
 
 ; =============================================================================
 ; DATA SECTION - MESSAGES

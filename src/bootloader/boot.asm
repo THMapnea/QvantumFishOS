@@ -24,6 +24,8 @@ bits 16
 
 %define ENDL 0x0D, 0x0A
 
+
+
 ; =============================================================================
 ; BIOS PARAMETER BLOCK (BPB)
 ; =============================================================================
@@ -57,6 +59,8 @@ ebr_volume_id:              db 12h, 34h, 56h, 78h  ; Volume ID (serial number)
 ebr_volume_label:           db 'QvantumFish'       ; Volume label (11 bytes)
 ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 
+
+
 ; =============================================================================
 ; BOOTSTRAP CODE
 ; =============================================================================
@@ -69,6 +73,8 @@ ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 
 start:
     jmp main
+
+
 
 ; =============================================================================
 ; PUTS FUNCTION
@@ -98,6 +104,8 @@ puts:
     pop si
     ret
 
+
+
 ; =============================================================================
 ; MAIN FUNCTION
 ; =============================================================================
@@ -126,6 +134,8 @@ main:
     call puts
     jmp wait_key_and_reboot ;call the function to keep the system waiting
 
+
+
 ; =============================================================================
 ; ERROR HANDLING ROUTINES
 ; =============================================================================
@@ -142,6 +152,8 @@ wait_key_and_reboot:
     cli                                ; disabel interrupt
     hlt                                ; halt execution
 
+
+
 ; =============================================================================
 ; SYSTEM CONTROL FUNCTIONS
 ; =============================================================================
@@ -149,6 +161,8 @@ wait_key_and_reboot:
 .halt:
     cli                                ; Disable interrupts to prevent exiting halt state
     hlt                                ; Halt processor execution
+
+
 
 ; =============================================================================
 ; DISK OPERATION ROUTINES
@@ -234,14 +248,18 @@ disk_read:
     ret                                 ; Return from function
 
 
+; Disk reset function
+; Resets the disk controller using BIOS interrupt 13h
+; Parameters: None
+; Returns: None (carry flag indicates success/failure)
 disk_reset:
-    pusha 
-    mov ah, 0
-    stc
-    int 13h
-    jc floppy_error
-    popa
-    ret
+    pusha                   ; Save all general-purpose registers
+    mov ah, 0               ; BIOS function: reset disk system
+    stc                     ; Set carry flag (some BIOSes require this)
+    int 13h                 ; Call BIOS disk service
+    jc floppy_error         ; Jump to error handler if reset failed (carry flag set)
+    popa                    ; Restore all general-purpose registers
+    ret                     ; Return from function
 
 
 
@@ -251,6 +269,8 @@ disk_reset:
 
 msg_welcome db 'welcome to QvantumFishOS', ENDL, 0
 msg_floppy_read_failed db 'Failed to read from floppy', ENDL, 0
+
+
 
 ; =============================================================================
 ; BOOT SIGNATURE

@@ -4,31 +4,31 @@
 # This Makefile automates the construction of a simple operating system
 # composed of a bootloader and a kernel, producing a bootable floppy disk image.
 #
-# Differences from previous version:
-# - Uses 'mcopy' command to copy the kernel to the FAT12 filesystem
-#   instead of writing it directly to disk sectors
-# - The kernel is loaded as a file in the filesystem instead of
-#   as raw data in disk sectors
-#
 # Project structure:
 # - SRC_DIR=src:        Directory containing source files
 # - BUILD_DIR=build:    Directory where compiled files are produced
 # - ASM=nasm:           Assembler used (Netwide Assembler)
+# - CC=gcc:             C compiler used for tools
+# - TOOLS_DIR=tools:    Directory containing utility tools
 #
 # Available targets:
 # - floppy_image:   Creates complete floppy disk image (main target)
 # - bootloader:     Compiles only the bootloader
 # - kernel:         Compiles only the kernel
+# - tools_fat:      Compiles the FAT filesystem utility tool
 # - clean:          Cleans the build directory
 
 # Configuration
 ASM=nasm
 SRC_DIR=src
 BUILD_DIR=build
+CC=gcc
+TOOLS_DIR=tools
 
 # Phony targets
-.PHONY: all floppy_image kernel bootloader clean always
+.PHONY: all floppy_image kernel bootloader clean always tools_fat
 
+all: floppy_image tools_fat
 
 
 # =============================================================================
@@ -44,7 +44,7 @@ BUILD_DIR=build
 # 3. Writes bootloader to boot sector (sector 0)
 # 4. Copies kernel as file to filesystem using mcopy
 #
-# NOTE: In this version the kernel is loaded as "kernel.bin" file
+# the kernel is loaded as "kernel.bin" file
 # in the FAT12 filesystem instead of being written directly to disk sectors.
 
 floppy_image: $(BUILD_DIR)/main_floppy.img
@@ -84,7 +84,7 @@ $(BUILD_DIR)/bootloader.bin: always
 # =============================================================================
 #
 # Compiles the kernel from assembly code.
-# In this version, the kernel is copied as a file to the FAT12 filesystem
+# the kernel is copied as a file to the FAT12 filesystem
 # instead of being written directly to disk sectors.
 #
 # This approach allows:
@@ -100,13 +100,40 @@ $(BUILD_DIR)/kernel.bin: always
 
 
 # =============================================================================
+# TOOLS COMPILATION
+# =============================================================================
+#
+# Compiles utility tools needed for the operating system development.
+# Currently includes a FAT filesystem utility for working with the
+# FAT12 filesystem on the floppy disk image.
+#
+# The fat tool provides functionality for:
+# - Reading and analyzing FAT12 filesystem structures
+# - Debugging filesystem-related issues
+# - Manipulating files on the disk image
+
+tools_fat: $(BUILD_DIR)/tools/fat
+
+$(BUILD_DIR)/tools/fat: always $(TOOLS_DIR)/fat/fat.c
+	mkdir -p $(BUILD_DIR)/tools
+	$(CC) -g -o $(BUILD_DIR)/tools/fat $(TOOLS_DIR)/fat/fat.c
+
+
+
+# =============================================================================
 # AUXILIARY TARGETS
 # =============================================================================
 
 # Target 'always': ensures build directory always exists
+# This target runs before any compilation to guarantee the build
+# directory structure is in place for output files
+
 always:
 	mkdir -p $(BUILD_DIR)
 
 # Target 'clean': removes all compiled files
+# Cleans the build directory to ensure a fresh build on next compilation
+# Useful for troubleshooting build issues or preparing for distribution
+
 clean:
 	rm -rf $(BUILD_DIR)/*

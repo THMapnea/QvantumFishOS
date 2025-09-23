@@ -179,6 +179,20 @@ bool readRootDirectory(FILE* disk){
     }
 }
 
+
+DirectoryEntry* findFile(const char* name){
+    for(uint32_t i = 0; i < g_BootSector.DirEntryCount; i++){
+        if(memcmp(name, g_RootDirectory[i].Name, 11) == 0){
+            return &g_RootDirectory[i];
+        }
+    }
+
+    return NULL;
+}
+
+
+
+
 // =============================================================================
 // MAIN FUNCTION
 // =============================================================================
@@ -237,6 +251,16 @@ int main(int argc, char** argv){
         free(g_Fat);
         free(g_RootDirectory);
         return -4;
+    }
+
+    DirectoryEntry* fileEntry = findFile(argv[2]);
+
+    if(!fileEntry){
+        fprintf(stderr, "could not find file! %s!\n", argv[2]);
+        
+        free(g_Fat);
+        free(g_RootDirectory);
+        return -5;
     }
 
     // Clean up allocated memory

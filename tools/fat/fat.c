@@ -120,6 +120,7 @@ typedef struct{
 BootSector g_BootSector;   // Stores the boot sector information
 uint8_t* g_Fat = NULL;     // Pointer to FAT table data
 DirectoryEntry* g_RootDirectory = NULL;  // Pointer to root directory entries
+uint32_t g_RootDirectoryEnd;
 
 // =============================================================================
 // BOOT SECTOR READING FUNCTION
@@ -213,6 +214,8 @@ bool readRootDirectory(FILE* disk){
         sectors++;
     }
     
+
+    g_RootDirectoryEnd = lba + sectors ;
     // Allocate memory for root directory (sector-aligned)
     g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
     // Read root directory sectors from disk
@@ -243,6 +246,11 @@ DirectoryEntry* findFile(const char* name){
     }
 
     return NULL;  // File not found
+}
+
+
+bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
+
 }
 
 // =============================================================================

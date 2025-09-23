@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<stdint.h>
 #include<stdlib.h>
+#include<string.h>
 
 // =============================================================================
 // FAT12 FILESYSTEM ANALYSIS TOOL
@@ -257,7 +258,7 @@ int main(int argc, char** argv){
 
     if(!fileEntry){
         fprintf(stderr, "could not find file! %s!\n", argv[2]);
-        
+
         free(g_Fat);
         free(g_RootDirectory);
         return -5;

@@ -78,29 +78,48 @@ typedef struct{
 
 }__attribute__((packed)) BootSector;
 
+// =============================================================================
+// DIRECTORY ENTRY STRUCTURE
+// =============================================================================
+//
+// Represents a directory entry in the FAT12 filesystem.
+// Each entry contains metadata about a file or subdirectory including
+// name, attributes, timestamps, cluster information, and file size.
+//
+// Attributes:
+// - Name:                 File name (8.3 format - 8 characters name, 3 characters extension)
+// - Attributes:           File attributes (read-only, hidden, system, etc.)
+// - _reserved:            Reserved byte for alignment
+// - CreatedTimeTenths:    Tenths of seconds for creation time
+// - CreatedTime:          File creation time (hours, minutes, seconds)
+// - CreatedDate:          File creation date (year, month, day)
+// - AccessDate:           Last access date
+// - FirstClusterHigh:     High 16 bits of first cluster number (usually 0 in FAT12)
+// - FirstClusterLow:      Low 16 bits of first cluster number
+// - ModifiedTime:         Last modification time
+// - ModifiedDate:         Last modification date
+// - Size:                 File size in bytes
+
 typedef struct{
-    uint8_t Name[1];
-    uint8_t Attributes;
-    uint8_t _reserved;
-    uint8_t CreatedTimeTenths;
-    uint16_t CreatedTime;
-    uint16_t CreatedDate;
-    uint16_t AccessDate;
-    uint16_t FirstClusterHigh;
-    uint16_t FirstClusterLow;
-    uint16_t ModifiedTime;
-    uint16_t ModifiedDate;
-    uint32_t Size;
+    uint8_t Name[11];              // File name in 8.3 format (no dot)
+    uint8_t Attributes;            // File attributes
+    uint8_t _reserved;             // Reserved for future use
+    uint8_t CreatedTimeTenths;     // Tenths of seconds (0-199)
+    uint16_t CreatedTime;          // Creation time (hour:minute:second)
+    uint16_t CreatedDate;          // Creation date (year:month:day)
+    uint16_t AccessDate;           // Last access date
+    uint16_t FirstClusterHigh;     // High word of first cluster (FAT32)
+    uint16_t FirstClusterLow;      // Low word of first cluster
+    uint16_t ModifiedTime;         // Last modification time
+    uint16_t ModifiedDate;         // Last modification date
+    uint32_t Size;                 // File size in bytes
 
 }__attribute__((packed)) DirectoryEntry;
-
-
-
 
 // Global variables for boot sector and FAT table
 BootSector g_BootSector;   // Stores the boot sector information
 uint8_t* g_Fat = NULL;     // Pointer to FAT table data
-DirectoryEntry* g_RootDirectory = NULL;
+DirectoryEntry* g_RootDirectory = NULL;  // Pointer to root directory entries
 
 // =============================================================================
 // BOOT SECTOR READING FUNCTION
@@ -166,33 +185,65 @@ bool readFat(FILE* disk){
     return readSectors(disk, g_BootSector.ReservedSectors, g_BootSector.SectorsPerFat, g_Fat);
 }
 
-
+// =============================================================================
+// ROOT DIRECTORY READING FUNCTION
+// =============================================================================
+//
+// Reads the root directory from the disk image.
+// The root directory is located after the FAT tables and contains
+// entries for all files and directories in the root of the filesystem.
+//
+// Parameters:
+// - disk: FILE pointer to the open disk image
+//
+// Returns:
+// - true:  Root directory read successfully
+// - false: Failed to read root directory
 
 bool readRootDirectory(FILE* disk){
+    // Calculate LBA of root directory (after reserved sectors and all FAT copies)
     uint32_t lba = g_BootSector.ReservedSectors + g_BootSector.SectorsPerFat * g_BootSector.FatCount;
+    // Calculate total size needed for root directory entries
     uint32_t size = sizeof(DirectoryEntry) * g_BootSector.DirEntryCount;
+    // Calculate number of sectors needed (rounding up if necessary)
     uint32_t sectors = (size / g_BootSector.BytesPerSector);
 
+    // If directory size doesn't align perfectly with sector boundary, add extra sector
     if(size % g_BootSector.BytesPerSector > 0){
         sectors++;
-        g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
-        return readSectors(disk, lba, sectors, g_RootDirectory);
     }
+    
+    // Allocate memory for root directory (sector-aligned)
+    g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
+    // Read root directory sectors from disk
+    return readSectors(disk, lba, sectors, g_RootDirectory);
 }
 
+// =============================================================================
+// FILE SEARCH FUNCTION
+// =============================================================================
+//
+// Searches for a file by name in the root directory.
+// Compares the provided filename with directory entries using exact 8.3 format matching.
+//
+// Parameters:
+// - name: Filename to search for (must be in 8.3 format without dot)
+//
+// Returns:
+// - Pointer to DirectoryEntry if file found
+// - NULL if file not found
 
 DirectoryEntry* findFile(const char* name){
+    // Iterate through all root directory entries
     for(uint32_t i = 0; i < g_BootSector.DirEntryCount; i++){
+        // Compare filename (exact match of 11 characters in 8.3 format)
         if(memcmp(name, g_RootDirectory[i].Name, 11) == 0){
-            return &g_RootDirectory[i];
+            return &g_RootDirectory[i];  // Return pointer to matching entry
         }
     }
 
-    return NULL;
+    return NULL;  // File not found
 }
-
-
-
 
 // =============================================================================
 // MAIN FUNCTION
@@ -209,13 +260,17 @@ DirectoryEntry* findFile(const char* name){
 // 2. Open disk image file
 // 3. Read boot sector information
 // 4. Read FAT table
-// 5. Clean up resources
+// 5. Read root directory
+// 6. Search for specified file
+// 7. Clean up resources
 //
 // Return codes:
 // - 0:  Success
-// - -1: Invalid arguments
+// - -1: Invalid arguments or cannot open disk
 // - -2: Boot sector read error
 // - -3: FAT read error
+// - -4: Root directory read error
+// - -5: File not found error
 
 int main(int argc, char** argv){
 
@@ -247,6 +302,7 @@ int main(int argc, char** argv){
         return -3;
     }
     
+    // Read root directory from disk image
     if(!readRootDirectory(disk)){
         fprintf(stderr, "could not read root!\n");
         free(g_Fat);
@@ -254,8 +310,10 @@ int main(int argc, char** argv){
         return -4;
     }
 
+    // Search for the specified file in root directory
     DirectoryEntry* fileEntry = findFile(argv[2]);
 
+    // Check if file was found
     if(!fileEntry){
         fprintf(stderr, "could not find file! %s!\n", argv[2]);
 

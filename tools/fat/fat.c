@@ -77,9 +77,29 @@ typedef struct{
 
 }__attribute__((packed)) BootSector;
 
+typedef struct{
+    uint8_t Name[1];
+    uint8_t Attributes;
+    uint8_t _reserved;
+    uint8_t CreatedTimeTenths;
+    uint16_t CreatedTime;
+    uint16_t CreatedDate;
+    uint16_t AccessDate;
+    uint16_t FirstClusterHigh;
+    uint16_t FirstClusterLow;
+    uint16_t ModifiedTime;
+    uint16_t ModifiedDate;
+    uint32_t Size;
+
+}__attribute__((packed)) DirectoryEntry;
+
+
+
+
 // Global variables for boot sector and FAT table
 BootSector g_BootSector;   // Stores the boot sector information
 uint8_t* g_Fat = NULL;     // Pointer to FAT table data
+DirectoryEntry* g_RootDirectory = NULL;
 
 // =============================================================================
 // BOOT SECTOR READING FUNCTION
@@ -145,6 +165,20 @@ bool readFat(FILE* disk){
     return readSectors(disk, g_BootSector.ReservedSectors, g_BootSector.SectorsPerFat, g_Fat);
 }
 
+
+
+bool readRootDirectory(FILE* disk){
+    uint32_t lba = g_BootSector.ReservedSectors + g_BootSector.SectorsPerFat * g_BootSector.FatCount;
+    uint32_t size = sizeof(DirectoryEntry) * g_BootSector.DirEntryCount;
+    uint32_t sectors = (size / g_BootSector.BytesPerSector);
+
+    if(size % g_BootSector.BytesPerSector > 0){
+        sectors++;
+        g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
+        return readSectors(disk, lba, sectors, g_RootDirectory);
+    }
+}
+
 // =============================================================================
 // MAIN FUNCTION
 // =============================================================================
@@ -197,9 +231,16 @@ int main(int argc, char** argv){
         free(g_Fat);
         return -3;
     }
+    
+    if(!readRootDirectory(disk)){
+        fprintf(stderr, "could not read root!\n");
+        free(g_Fat);
+        free(g_RootDirectory);
+        return -4;
+    }
 
     // Clean up allocated memory
     free(g_Fat);
-
+    free(g_RootDirectory);
     return 0;
 }

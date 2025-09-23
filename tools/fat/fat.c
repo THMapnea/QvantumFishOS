@@ -250,7 +250,14 @@ DirectoryEntry* findFile(const char* name){
 
 
 bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
+    bool escape = false;
+    uint16_t currentCluster = fileEntry->FirstClusterLow;
 
+    do{
+
+    }while(!escape);
+    
+    return !escape;
 }
 
 // =============================================================================

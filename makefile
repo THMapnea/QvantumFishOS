@@ -43,6 +43,7 @@ all: floppy_image tools_fat
 # 2. Formats image as FAT12 filesystem with volume name "NBOS"
 # 3. Writes bootloader to boot sector (sector 0)
 # 4. Copies kernel as file to filesystem using mcopy
+# 5. Copies test.txt file for testing purposes
 #
 # the kernel is loaded as "kernel.bin" file
 # in the FAT12 filesystem instead of being written directly to disk sectors.

@@ -1,0 +1,1 @@
+./build/tools/fat build/main_floppy.img "TEST    TXT"

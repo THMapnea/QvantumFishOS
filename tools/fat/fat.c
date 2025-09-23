@@ -17,6 +17,7 @@
 // Features:
 // - Reads and parses boot sector information
 // - Loads and analyzes FAT table
+// - Reads and displays file contents
 // - Provides foundation for file operations on FAT12 filesystem
 
 // Boolean type definition for better code readability
@@ -118,10 +119,10 @@ typedef struct{
 }__attribute__((packed)) DirectoryEntry;
 
 // Global variables for boot sector and FAT table
-BootSector g_BootSector;   // Stores the boot sector information
-uint8_t* g_Fat = NULL;     // Pointer to FAT table data
+BootSector g_BootSector;           // Stores the boot sector information
+uint8_t* g_Fat = NULL;             // Pointer to FAT table data
 DirectoryEntry* g_RootDirectory = NULL;  // Pointer to root directory entries
-uint32_t g_RootDirectoryEnd;
+uint32_t g_RootDirectoryEnd;       // LBA of the first sector after root directory
 
 // =============================================================================
 // BOOT SECTOR READING FUNCTION
@@ -215,8 +216,8 @@ bool readRootDirectory(FILE* disk){
         sectors++;
     }
     
-
-    g_RootDirectoryEnd = lba + sectors ;
+    // Store the LBA of the first sector after root directory (where data area begins)
+    g_RootDirectoryEnd = lba + sectors;
     // Allocate memory for root directory (sector-aligned)
     g_RootDirectory = (DirectoryEntry*) malloc(sectors * g_BootSector.BytesPerSector);
     // Read root directory sectors from disk
@@ -249,24 +250,51 @@ DirectoryEntry* findFile(const char* name){
     return NULL;  // File not found
 }
 
+// =============================================================================
+// FILE READING FUNCTION
+// =============================================================================
+//
+// Reads the contents of a file from the disk image by following the cluster chain
+// in the FAT table. Files are stored in clusters that may be non-contiguous,
+// requiring traversal of the FAT to locate all clusters belonging to the file.
+//
+// Parameters:
+// - fileEntry:    Pointer to the directory entry of the file to read
+// - disk:         FILE pointer to the open disk image
+// - outputBuffer: Buffer to store the file contents (must be large enough for file size)
+//
+// Returns:
+// - true:  File read successfully
+// - false: Failed to read file
 
 bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
     bool loop = true;
+    // Start with the first cluster of the file
     uint16_t currentCluster = fileEntry->FirstClusterLow;
 
+    // Follow the cluster chain until end-of-file marker is reached
     do{
+        // Calculate LBA of current cluster (data area starts after root directory)
         uint32_t lba = g_RootDirectoryEnd + (currentCluster - 2) * g_BootSector.SectorsPerCluster;
+        // Read the current cluster
         loop = loop && readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer);
+        // Advance output buffer pointer by cluster size
         outputBuffer += g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
 
-        uint32_t fatIndex =  currentCluster * 3 / 2;
+        // Calculate FAT index for current cluster (FAT12 uses 12-bit entries)
+        uint32_t fatIndex = currentCluster * 3 / 2;
+        
+        // Read next cluster from FAT (handles 12-bit entries)
         if(currentCluster % 2 == 0){
+            // Even cluster: use low 12 bits of 16-bit value
             currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) & 0x0FFF;
         }else{
+            // Odd cluster: use high 12 bits of 16-bit value
             currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) >> 4;
         }
 
-    }while(loop && currentCluster >= 0xFF8);
+    // Continue until end-of-file cluster (0xFF8-0xFFF) is reached
+    }while(loop && currentCluster < 0xFF8);
     
     return loop;
 }
@@ -288,7 +316,9 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
 // 4. Read FAT table
 // 5. Read root directory
 // 6. Search for specified file
-// 7. Clean up resources
+// 7. Read file contents
+// 8. Display file contents
+// 9. Clean up resources
 //
 // Return codes:
 // - 0:  Success
@@ -297,6 +327,7 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
 // - -3: FAT read error
 // - -4: Root directory read error
 // - -5: File not found error
+// - -6: File read error
 
 int main(int argc, char** argv){
 
@@ -342,14 +373,16 @@ int main(int argc, char** argv){
     // Check if file was found
     if(!fileEntry){
         fprintf(stderr, "could not find file! %s!\n", argv[2]);
-
         free(g_Fat);
         free(g_RootDirectory);
         return -5;
     }
 
+    // Allocate buffer for file contents (with extra sector for safety)
     uint8_t* buffer = (uint8_t*) malloc(fileEntry->Size + g_BootSector.BytesPerSector);
-    if(readFile(fileEntry, disk, buffer)){
+    
+    // Read file contents from disk
+    if(!readFile(fileEntry, disk, buffer)){
         fprintf(stderr, "could not read the file! %s!\n", argv[2]);
         free(buffer);
         free(g_Fat);
@@ -357,13 +390,14 @@ int main(int argc, char** argv){
         return -6;
     }
 
-
+    // Display file contents with printable character filtering
     for(size_t i = 0; i < fileEntry->Size; i++){
-        if(isprint(buffer[i])) fputc(buffer[i], stdout);
-        else printf("<%02x", buffer[i]);
+        if(isprint(buffer[i])) 
+            fputc(buffer[i], stdout);  // Print printable characters directly
+        else 
+            printf("<%02x", buffer[i]);  // Show hex codes for non-printable characters
     }
     printf("\n");
-
 
     // Clean up allocated memory
     free(buffer);

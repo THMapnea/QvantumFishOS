@@ -175,40 +175,6 @@ bool read_root_directory(FILE* disk) {
 // =============================================================================
 
 /**
- * Converts regular filename to FAT12 8.3 format
- * 
- * @param input Original filename (e.g., "test.txt")
- * @param output Output buffer for FAT12 name (11 bytes)
- */
-void to_fat12_name(const char* input, char* output) {
-    // Initialize with spaces
-    memset(output, ' ', 11);
-    
-    const char* dot = strchr(input, '.');
-    
-    if (dot == NULL) {
-        // No extension - copy name only (max 8 chars)
-        int name_len = strlen(input);
-        if (name_len > 8) name_len = 8;
-        memcpy(output, input, name_len);
-    } else {
-        // Has extension - copy name and extension
-        int name_len = dot - input;
-        if (name_len > 8) name_len = 8;
-        memcpy(output, input, name_len);
-        
-        int ext_len = strlen(dot + 1);
-        if (ext_len > 3) ext_len = 3;
-        memcpy(output + 8, dot + 1, ext_len);
-    }
-    
-    // Convert to uppercase
-    for (int i = 0; i < 11; i++) {
-        output[i] = toupper(output[i]);
-    }
-}
-
-/**
  * Searches for file in root directory
  * 
  * @param name Filename in FAT12 8.3 format (11 characters)
@@ -308,11 +274,10 @@ void print_boot_sector_info() {
 /**
  * FAT12 Filesystem Analysis Tool
  * 
- * Usage: fat <disk_image> <file_name>
+ * Usage: fat <disk_image> <fat12_filename>
  * 
  * This tool reads FAT12 filesystem structures and extracts files from
- * disk images. It demonstrates low-level filesystem operations including
- * boot sector parsing, FAT traversal, and cluster chain reading.
+ * disk images. Filename must be in exact FAT12 8.3 format (11 characters).
  * 
  * Return codes:
  *   0  Success
@@ -326,8 +291,18 @@ void print_boot_sector_info() {
 int main(int argc, char** argv) {
     // Validate command line arguments
     if (argc < 3) {
-        printf("Usage: %s <disk_image> <file_name>\n", argv[0]);
-        printf("Example: %s floppy.img README.TXT\n", argv[0]);
+        printf("Usage: %s <disk_image> <fat12_filename>\n", argv[0]);
+        printf("Example: %s floppy.img \"KERNEL  BIN\"\n", argv[0]);
+        printf("Note: Filename must be exact FAT12 8.3 format (11 characters)\n");
+        printf("      Use quotes for filenames with spaces: \"TEST    TXT\"\n");
+        return -1;
+    }
+    
+    // Validate filename length
+    if (strlen(argv[2]) != 11) {
+        fprintf(stderr, "Error: Filename must be exactly 11 characters for FAT12 8.3 format\n");
+        fprintf(stderr, "Provided filename length: %zu characters\n", strlen(argv[2]));
+        fprintf(stderr, "Example: \"KERNEL  BIN\" or \"TEST    TXT\"\n");
         return -1;
     }
     
@@ -368,19 +343,20 @@ int main(int argc, char** argv) {
     print_root_directory();
     printf("\n");
     
-    // Convert filename to FAT12 format and search
-    char fat_name[11];
-    to_fat12_name(argv[2], fat_name);
-    
+    // Search for file using exact FAT12 name
     printf("Searching for: ");
     for (int i = 0; i < 11; i++) {
-        printf("%c", fat_name[i]);
+        printf("%c", argv[2][i]);
     }
     printf("\n");
     
-    DirectoryEntry* file_entry = find_file(fat_name);
+    DirectoryEntry* file_entry = find_file(argv[2]);
     if (!file_entry) {
-        fprintf(stderr, "Error: File '%s' not found in root directory\n", argv[2]);
+        fprintf(stderr, "Error: File '");
+        for (int i = 0; i < 11; i++) {
+            fprintf(stderr, "%c", argv[2][i]);
+        }
+        fprintf(stderr, "' not found in root directory\n");
         free(g_Fat);
         free(g_RootDirectory);
         fclose(disk);
@@ -400,7 +376,11 @@ int main(int argc, char** argv) {
     }
     
     if (!read_file(file_entry, disk, buffer)) {
-        fprintf(stderr, "Error: Failed to read file '%s'\n", argv[2]);
+        fprintf(stderr, "Error: Failed to read file '");
+        for (int i = 0; i < 11; i++) {
+            fprintf(stderr, "%c", argv[2][i]);
+        }
+        fprintf(stderr, "'\n");
         free(buffer);
         free(g_Fat);
         free(g_RootDirectory);

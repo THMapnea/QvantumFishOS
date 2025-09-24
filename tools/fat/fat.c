@@ -293,8 +293,8 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
             currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) >> 4;
         }
 
-    // Continue until end-of-file cluster (0xFF8-0xFFF) is reached
-    }while(loop && currentCluster < 0xFF8);
+    // Continue until end-of-file cluster (0x0FF8-0x0FFF) is reached
+    }while(loop && currentCluster < 0x0FF8);
     
     return loop;
 }

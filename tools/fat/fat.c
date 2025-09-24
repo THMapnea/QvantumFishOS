@@ -271,7 +271,7 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
     bool loop = true;
     // Start with the first cluster of the file
     uint16_t currentCluster = fileEntry->FirstClusterLow;
-
+    
     // Follow the cluster chain until end-of-file marker is reached
     do{
         // Calculate LBA of current cluster (data area starts after root directory)

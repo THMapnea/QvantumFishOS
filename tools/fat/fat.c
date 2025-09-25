@@ -384,9 +384,9 @@ int main(int argc, char** argv){
     // Read file contents from disk
     if(!readFile(fileEntry, disk, buffer)){
         fprintf(stderr, "could not read the file! %s!\n", argv[2]);
-        free(buffer);
         free(g_Fat);
         free(g_RootDirectory);
+        free(buffer);
         return -6;
     }
 

@@ -71,9 +71,181 @@ ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 ; 3. (Future) Loads kernel from filesystem
 ; 4. (Future) Transfers execution to kernel
 
-start:
-    jmp main
 
+
+; =============================================================================
+; MAIN FUNCTION
+; =============================================================================
+
+start:
+    ; Initialize data segments
+    mov ax, 0                   ; load 0 in the accumulator register to initialize
+    mov ds, ax                  ; set the data segment register to 0
+    mov es, ax                  ; set the extra segment register to 0
+
+    ; Initialize stack
+    mov ss, ax                  ; set the stack pointer to 0
+    mov sp, 0x7C00              ; Stack grows downward from 0x7C00
+
+    push es
+    push word .after
+    retf
+
+.after
+
+; let's read some data from the disk
+    mov [ebr_drive_number], dl  ;move the extended boot record drive number in the dl for reading
+
+
+    ; show loading message
+    mov si, msg_loading         ; load the message in the si register
+    call puts                   ; call the function
+    jmp wait_key_and_reboot     ; call the function to keep the system waiting
+
+
+    push es
+    mov ah, 08h
+    int 13h
+    jc floppy_error
+    pop es
+
+    and cl, 0x3f
+    xor ch, ch
+    mov [bdb_sectors_per_track], cx
+
+    inc dh
+    mov [bdb_heads], dh
+
+    ;read fat root directory
+    mov ax, [bdb_sectors_per_fat]
+    mov bl, [bdb_fat_count]
+    xor bh, bh
+    mul bx
+    add ax, [bdb_reserved_sectors]
+    push ax
+
+    mov ax, [bdb_dir_entries_count]
+    shl ax, 5
+    xor dx, dx
+    div word [bdb_bytes_per_sector]
+
+    test dx, dx
+    jz .root_dir_after
+    inc ax
+
+
+
+.root_dir_after:
+    mov cl, al
+    pop ax
+    mov dl, [ebr_drive_number]
+    mov bx, buffer
+    call disk_read
+
+    xor bx, bx
+    mov di, buffer
+
+
+
+.search_kernel:
+    mov si, file_kernel_bin
+    mov cx, 11
+    push di
+    repe cmpsb
+    pop di
+    je .found_kernel
+
+    add di, 32
+    inc bx
+    cmp bx, [bdb_dir_entries_count]
+
+    jl .search_kernel
+
+    jmp kernel_not_found_error
+
+.found_kernel:
+    mov ax, [di + 26]
+
+    mov [kernel_cluster], ax
+
+    mov ax, [bdb_reserved_sectors]
+    mov bx, buffer
+    mov cl, [bdb_sectors_per_fat]
+    mov dl, [ebr_drive_number]
+    call disk_read
+
+    mov bx, KERNEL_LOAD_SEGMENT
+    mov es, bx
+    mov bx, KERNEL_LOAD_OFFSET
+
+.load_kernel_loop:
+    mov ax, [kernel_cluster]
+    add ax, 31      ;hardcoded
+
+
+    mov cl, 1
+    mov dl, [ebr_drive_number]
+    call disk_read
+    add bx, [bdb_bytes_per_sector]
+
+    mov ax, [kernel_cluster]
+    mov cx, 3
+    mul cx
+    mov cx, 2
+    div cx
+    mov si, buffer
+    add si, ax
+    mov ax, [ds:si]
+    or dx, dx
+    jz .even
+
+.odd:
+    shr dx, 4
+    jmp .next_cluster_after
+
+.even:
+    and ax, 0x0FFF
+
+.next_cluster_after:
+    cmp ax, 0x0FF8
+    jae .read_finish
+
+    mov [kernel_cluster], ax
+    jmp .load_kernel_loop
+
+.read_finish:
+    mov di, [ebr_drive_number]
+    mov ax, KERNEL_LOAD_SEGMENT
+    mov ds, ax
+    mov es, ax
+
+    jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+    jmp wait_key_and_reboot
+    cli
+    hlt
+
+
+
+; =============================================================================
+; ERROR HANDLING ROUTINES
+; =============================================================================
+
+floppy_error:
+    mov si, msg_floppy_read_failed     ; Load error message string
+    call puts                          ; Display error message
+    jmp wait_key_and_reboot            ; Jump to reboot handler
+
+wait_key_and_reboot:
+    mov ah, 0                          ; BIOS function: wait for keypress
+    int 16h                            ; Call BIOS keyboard service
+    jmp 0FFFFh:0                       ; Jump to BIOS reset vector (reboot system)
+    cli                                ; disabel interrupt
+    hlt                                ; halt execution
+
+kernel_not_found_error:
+    mov si, msg_kernel_not_found
+    call puts
+    jmp wait_key_and_reboot
 
 
 ; =============================================================================
@@ -103,55 +275,6 @@ puts:
     pop ax                  ; restore ax value from the stack
     pop si                  ;vrestore si value from the stack
     ret                     ; return from the routine
-
-
-
-; =============================================================================
-; MAIN FUNCTION
-; =============================================================================
-
-main:
-    ; Initialize data segments
-    mov ax, 0                   ; load 0 in the accumulator register to initialize
-    mov ds, ax                  ; set the data segment register to 0
-    mov es, ax                  ; set the extra segment register to 0
-
-    ; Initialize stack
-    mov ss, ax                  ; set the stack pointer to 0
-    mov sp, 0x7C00              ; Stack grows downward from 0x7C00
-
-
-; let's read some data from the disk
-    mov [ebr_drive_number], dl  ;move the extended boot record drive number in the dl for reading
-    mov ax, 1                   ; second sector from the disk
-    mov cl, 1                   ; 1 sector to read
-    mov bx, 0x7E00              ; data should be after the bootloader
-    call disk_read              ; call the function
-
-
-    ; Display welcome message
-    mov si, msg_welcome         ; load the message in the si register
-    call puts                   ; call the function
-    jmp wait_key_and_reboot     ; call the function to keep the system waiting
-
-
-
-; =============================================================================
-; ERROR HANDLING ROUTINES
-; =============================================================================
-
-floppy_error:
-    mov si, msg_floppy_read_failed     ; Load error message string
-    call puts                          ; Display error message
-    jmp wait_key_and_reboot            ; Jump to reboot handler
-
-wait_key_and_reboot:
-    mov ah, 0                          ; BIOS function: wait for keypress
-    int 16h                            ; Call BIOS keyboard service
-    jmp 0FFFFh:0                       ; Jump to BIOS reset vector (reboot system)
-    cli                                ; disabel interrupt
-    hlt                                ; halt execution
-
 
 
 ; =============================================================================
@@ -267,9 +390,13 @@ disk_reset:
 ; DATA SECTION - MESSAGES
 ; =============================================================================
 
-msg_welcome db 'welcome to QvantumFishOS', ENDL, 0
-msg_floppy_read_failed db 'Failed to read from floppy', ENDL, 0
-
+msg_loading: db 'Qvantum Loading...', ENDL, 0
+msg_floppy_read_failed: db 'Failed to read from floppy', ENDL, 0
+msg_kernel_not_found: db 'kernel nf', ENDL, 0
+file_kernel_bin: db 'KERNEL  BIN'
+kernel_cluster: dw 0 
+KERNEL_LOAD_SEGMENT equ 0x2000
+KERNEL_LOAD_OFFSET  equ 0
 
 
 ; =============================================================================
@@ -281,3 +408,5 @@ msg_floppy_read_failed db 'Failed to read from floppy', ENDL, 0
 
 times 510-($-$$) db 0       ; Fill remainder of sector with zeros
 dw 0AA55h                   ; Boot signature (little endian)
+
+buffer:

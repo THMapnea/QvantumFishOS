@@ -267,63 +267,56 @@ DirectoryEntry* findFile(const char* name){
 // - true:  File read successfully
 // - false: Failed to read file
 
-bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer) {
-    if (fileEntry->FirstClusterLow == 0) {
-        // File is empty
-        return true;
-    }
+bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
+    if(fileEntry->Size == 0) return true;
     
     uint16_t currentCluster = fileEntry->FirstClusterLow;
     uint32_t bytesRead = 0;
-    uint32_t fileSize = fileEntry->Size;
     
-    while (currentCluster < 0xFF8) { // While not EOF
-        if (currentCluster >= 0xFF0) {
-            // Bad cluster or other special markers
-            break;
-        }
+    printf("Starting cluster chain: %d\n", currentCluster);
+    
+    while(currentCluster < 0xFF8 && bytesRead < fileEntry->Size){
+        printf("Reading cluster %d\n", currentCluster);
         
-        // Calculate LBA of current cluster
+        // Calculate LBA for this cluster
         uint32_t lba = g_RootDirectoryEnd + (currentCluster - 2) * g_BootSector.SectorsPerCluster;
+        printf("Cluster %d -> LBA %d\n", currentCluster, lba);
         
-        // Calculate how much to read for this cluster
-        uint32_t bytesToRead = g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
-        if (bytesRead + bytesToRead > fileSize) {
-            bytesToRead = fileSize - bytesRead;
-        }
+        // Calculate how much to read
+        uint32_t bytesThisCluster = g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
+        uint32_t bytesRemaining = fileEntry->Size - bytesRead;
+        uint32_t bytesToRead = (bytesThisCluster < bytesRemaining) ? bytesThisCluster : bytesRemaining;
         
-        // Read the current cluster (or partial cluster if needed)
-        if (!readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer)) {
+        // Read the cluster
+        if(!readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer + bytesRead)){
+            printf("Failed to read cluster %d at LBA %d\n", currentCluster, lba);
             return false;
         }
         
-        outputBuffer += bytesToRead;
         bytesRead += bytesToRead;
-        
-        if (bytesRead >= fileSize) {
-            break; // File completely read
-        }
+        printf("Read %d bytes from cluster %d (total: %d/%d)\n", 
+               bytesToRead, currentCluster, bytesRead, fileEntry->Size);
         
         // Get next cluster from FAT
         uint32_t fatIndex = currentCluster * 3 / 2;
-        
-        // Read the 16-bit value containing two FAT12 entries
         uint16_t fatValue = *(uint16_t*)(g_Fat + fatIndex);
         
-        // Extract the correct 12-bit entry
-        if (currentCluster % 2 == 0) {
-            currentCluster = fatValue & 0x0FFF; // Even cluster: take low 12 bits
-        } else {
-            currentCluster = fatValue >> 4;     // Odd cluster: take high 12 bits
+        if(currentCluster % 2 == 0){
+            currentCluster = fatValue & 0x0FFF;
+        }else{
+            currentCluster = fatValue >> 4;
         }
         
+        printf("Next cluster: %d (0x%03x)\n", currentCluster, currentCluster);
+        
         // Check for bad cluster
-        if (currentCluster == 0xFF7) {
-            fprintf(stderr, "Bad cluster encountered!\n");
+        if(currentCluster == 0xFF7){
+            printf("Bad cluster encountered!\n");
             return false;
         }
     }
     
+    printf("File reading completed. Total bytes read: %d\n", bytesRead);
     return true;
 }
 
@@ -358,76 +351,144 @@ bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer) {
 // - -6: File read error
 
 int main(int argc, char** argv){
-
-    // Check for correct number of command line arguments
     if(argc < 3){
         printf("Syntax: %s <disk image> <file name>\n", argv[0]);
         return -1;
     }
 
-    // Open the disk image file for reading
     FILE* disk = fopen(argv[1], "rb");
-
-    // Check if file opened successfully
     if(!disk){
         fprintf(stderr, "cannot open disk image %s!", argv[1]);
         return -1;
     }
 
-    // Read boot sector from disk image
+    // Read boot sector
     if(!readBootSector(disk)){
-        fprintf(stderr, "could not read boot sector! %s\n");
+        fprintf(stderr, "could not read boot sector!\n");
         return -2;
     }
 
-    // Read FAT table from disk image
+    // Debug: Print boot sector info
+    printf("=== BOOT SECTOR INFO ===\n");
+    printf("Bytes per sector: %d\n", g_BootSector.BytesPerSector);
+    printf("Sectors per cluster: %d\n", g_BootSector.SectorsPerCluster);
+    printf("Reserved sectors: %d\n", g_BootSector.ReservedSectors);
+    printf("FAT count: %d\n", g_BootSector.FatCount);
+    printf("Root dir entries: %d\n", g_BootSector.DirEntryCount);
+    printf("Sectors per FAT: %d\n", g_BootSector.SectorsPerFat);
+    printf("Total sectors: %d\n", g_BootSector.TotalSector);
+
+    // Read FAT
     if(!readFat(disk)){
         fprintf(stderr, "could not read FAT!\n");
         free(g_Fat);
         return -3;
     }
     
-    // Read root directory from disk image
+    // Read root directory
     if(!readRootDirectory(disk)){
-        fprintf(stderr, "could not read root!\n");
+        fprintf(stderr, "could not read root directory!\n");
         free(g_Fat);
         free(g_RootDirectory);
         return -4;
     }
 
-    // Search for the specified file in root directory
-    DirectoryEntry* fileEntry = findFile(argv[2]);
+    printf("Root directory ends at LBA: %d\n", g_RootDirectoryEnd);
 
-    // Check if file was found
+    // Debug: List all files in root directory
+    printf("\n=== ROOT DIRECTORY CONTENTS ===\n");
+    for(uint32_t i = 0; i < g_BootSector.DirEntryCount; i++){
+        if(g_RootDirectory[i].Name[0] != 0x00 && g_RootDirectory[i].Name[0] != 0xE5){
+            printf("File: %11.11s | Size: %d bytes | First cluster: %d | Attr: 0x%02x\n",
+                   g_RootDirectory[i].Name,
+                   g_RootDirectory[i].Size,
+                   g_RootDirectory[i].FirstClusterLow,
+                   g_RootDirectory[i].Attributes);
+        }
+    }
+
+    // Search for the specified file
+    DirectoryEntry* fileEntry = findFile(argv[2]);
     if(!fileEntry){
-        fprintf(stderr, "could not find file! %s!\n", argv[2]);
+        fprintf(stderr, "could not find file: %s\n", argv[2]);
         free(g_Fat);
         free(g_RootDirectory);
         return -5;
     }
 
-    // Allocate buffer for file contents (with extra sector for safety)
+    printf("\n=== TARGET FILE INFO ===\n");
+    printf("File: %11.11s\n", fileEntry->Name);
+    printf("Size: %d bytes\n", fileEntry->Size);
+    printf("First cluster: %d\n", fileEntry->FirstClusterLow);
+    printf("Attributes: 0x%02x\n", fileEntry->Attributes);
+    
+    // Check if it's a directory or volume label
+    if(fileEntry->Attributes & 0x10){
+        printf("ERROR: This is a directory, not a file!\n");
+        free(g_Fat);
+        free(g_RootDirectory);
+        return -6;
+    }
+    if(fileEntry->Attributes & 0x08){
+        printf("ERROR: This is a volume label!\n");
+        free(g_Fat);
+        free(g_RootDirectory);
+        return -6;
+    }
+
+    // Check if file is empty
+    if(fileEntry->Size == 0){
+        printf("File is empty (0 bytes)\n");
+        free(g_Fat);
+        free(g_RootDirectory);
+        return 0;
+    }
+
+    // Check first cluster validity
+    if(fileEntry->FirstClusterLow < 2){
+        printf("ERROR: Invalid first cluster: %d\n", fileEntry->FirstClusterLow);
+        free(g_Fat);
+        free(g_RootDirectory);
+        return -6;
+    }
+
+    // Allocate buffer
     uint8_t* buffer = (uint8_t*) malloc(fileEntry->Size + g_BootSector.BytesPerSector);
     
-    // Read file contents from disk
+    // Read file with debug output
+    printf("Reading file...\n");
     if(!readFile(fileEntry, disk, buffer)){
-        fprintf(stderr, "could not read the file! %s!\n", argv[2]);
+        fprintf(stderr, "could not read the file!\n");
         free(g_Fat);
         free(g_RootDirectory);
         free(buffer);
         return -6;
     }
 
-    // Display file contents with printable character filtering
+    printf("File read successfully. Content:\n");
+    
+    // Check if buffer contains only nulls
+    bool allNulls = true;
+    for(uint32_t i = 0; i < fileEntry->Size && i < 100; i++){ // Check first 100 bytes
+        if(buffer[i] != 0x00){
+            allNulls = false;
+            break;
+        }
+    }
+    
+    if(allNulls){
+        printf("WARNING: File appears to contain only null bytes (0x00)\n");
+    }
+
+    // Display file contents
     for(size_t i = 0; i < fileEntry->Size; i++){
         if(isprint(buffer[i])) 
-            fputc(buffer[i], stdout);  // Print printable characters directly
+            fputc(buffer[i], stdout);
         else 
-            printf("<%02x", buffer[i]);  // Show hex codes for non-printable characters
+            printf("<%02x>", buffer[i]);
     }
     printf("\n");
 
-    // Clean up allocated memory
     free(buffer);
     free(g_Fat);
     free(g_RootDirectory);

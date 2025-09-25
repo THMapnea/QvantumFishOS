@@ -15,21 +15,21 @@ bits 16                     ; 16-bit real mode
 ; =============================================================================
 
 start:
-; Print welcome messages
-    mov si, msg_q1
-    call puts
-    mov si, msg_q2
-    call puts
-    mov si, msg_q3
-    call puts
-    mov si, msg_q4
-    call puts
-    mov si, msg_q5
-    call puts
+    ; Print welcome messages
+    mov si, msg_q1        ; Load address of first message line into SI register
+    call puts             ; Call print string function to display first line
+    mov si, msg_q2        ; Load address of second message line into SI register
+    call puts             ; Call print string function to display second line
+    mov si, msg_q3        ; Load address of third message line into SI register
+    call puts             ; Call print string function to display third line
+    mov si, msg_q4        ; Load address of fourth message line into SI register
+    call puts             ; Call print string function to display fourth line
+    mov si, msg_q5        ; Load address of fifth message line into SI register
+    call puts             ; Call print string function to display fifth line
 
 .halt:
-    cli 
-    hlt
+    cli                   ; Clear interrupt flag to disable interrupts
+    hlt                   ; Halt processor execution
 
 
 
@@ -42,36 +42,35 @@ start:
 ;   ds:si - pointer to string to print
 
 puts:
-    push si                 ; Save registers
-    push ax 
-    push bx
+    push si                 ; Save SI register value to stack for preservation
+    push ax                 ; Save AX register value to stack for preservation
+    push bx                 ; Save BX register value to stack for preservation
 
 .loop:  
-    lodsb                   ; Load byte from [si] into AL, increment SI
-    or al, al               ; Check if AL = 0 (end of string)
-    jz .done 
+    lodsb                   ; Load byte from memory address [SI] into AL register, increment SI
+    or al, al               ; Perform logical OR operation to check if AL = 0 (end of string)
+    jz .done                ; Jump to done label if zero flag set (end of string reached)
 
-    mov ah, 0x0E            ; BIOS teletype output function
-    mov bh, 0               ; Video page 0
-    int 0x10                ; Call BIOS video service
+    mov ah, 0x0E            ; Set AH register to 0x0E (BIOS teletype output function)
+    mov bh, 0               ; Set BH register to 0 (select video page 0)
+    int 0x10                ; Call BIOS video service interrupt 0x10
     
-    jmp .loop               ; Continue with next character
+    jmp .loop               ; Unconditional jump back to loop label for next character
     
 .done:
-    pop bx
-    pop ax                  ; Restore registers
-    pop si      
-    ret                     ; Return from function
-
+    pop bx                  ; Restore BX register value from stack
+    pop ax                  ; Restore AX register value from stack
+    pop si                  ; Restore SI register value from stack
+    ret                     ; Return from function to calling code
 
 
 ; =============================================================================
 ; WELCOME MESSAGES
 ; =============================================================================
 
-msg_q1 db '  ___                   _                   _____ _     _      ___  ____', ENDL, 0
-msg_q2 db ' / _ \__   ____ _ _ __ | |_ _   _ _ __ ___ |  ___(_)___| |__  / _ \/ ___| ', ENDL, 0
-msg_q3 db '| | | \ \ / / _  |  _ \| __| | | |  _   _ \| |_  | / __|  _ \| | | \___ \ ', ENDL, 0
-msg_q4 db '| |_| |\ V / (_| | | | | |_| |_| | | | | | |  _| | \__ \ | | | |_| |___) |', ENDL, 0
-msg_q5 db ' \__\_\ \_/ \__ _|_| |_|\__|\__ _|_| |_| |_|_|   |_|___/_| |_|\___/|____/ ', ENDL, 0
+msg_q1 db '    ___                   _                   _____ _     _      ___  ____', ENDL, 0
+msg_q2 db '   / _ \__   ____ _ _ __ | |_ _   _ _ __ ___ |  ___(_)___| |__  / _ \/ ___| ', ENDL, 0
+msg_q3 db '  | | | \ \ / / _  |  _ \| __| | | |  _   _ \| |_  | / __|  _ \| | | \___ \ ', ENDL, 0
+msg_q4 db '  | |_| |\ V / (_| | | | | |_| |_| | | | | | |  _| | \__ \ | | | |_| |___) |', ENDL, 0
+msg_q5 db '   \__\_\ \_/ \__ _|_| |_|\__|\__ _|_| |_| |_|_|   |_|___/_| |_|\___/|____/ ', ENDL, 0
 

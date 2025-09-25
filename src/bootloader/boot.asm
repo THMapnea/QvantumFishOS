@@ -1,9 +1,3 @@
-;     ___                   _                   _____ _     _      ___  ____
-;   / _ \__   ____ _ _ __ | |_ _   _ _ __ ___ |  ___(_)___| |__  / _ \/ ___|
-;  | | | \ \ / / _` | '_ \| __| | | | '_ ` _ \| |_  | / __| '_ \| | | \___ \
-; | |_| |\ V / (_| | | | | |_| |_| | | | | | |  _| | \__ \ | | | |_| |___) |
-; \__\_\ \_/ \__,_|_| |_|\__|\__,_|_| |_| |_|_|   |_|___/_| |_|\___/|____/
-
 ; =============================================================================
 ; BOOTLOADER FOR NBOS OPERATING SYSTEM
 ; =============================================================================
@@ -68,8 +62,8 @@ ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 ; Main bootloader code that:
 ; 1. Initializes registers and stack
 ; 2. Displays welcome message
-; 3. (Future) Loads kernel from filesystem
-; 4. (Future) Transfers execution to kernel
+; 3. Loads kernel from FAT12 filesystem
+; 4. Transfers execution to kernel
 
 
 
@@ -79,150 +73,167 @@ ebr_system_id:              db 'FAT12   '          ; Filesystem type (8 bytes)
 
 start:
     ; Initialize data segments
-    mov ax, 0                   ; load 0 in the accumulator register to initialize
-    mov ds, ax                  ; set the data segment register to 0
-    mov es, ax                  ; set the extra segment register to 0
+    mov ax, 0                   ; Load 0 in the accumulator register to initialize
+    mov ds, ax                  ; Set the data segment register to 0
+    mov es, ax                  ; Set the extra segment register to 0
 
     ; Initialize stack
-    mov ss, ax                  ; set the stack pointer to 0
+    mov ss, ax                  ; Set the stack pointer to 0
     mov sp, 0x7C00              ; Stack grows downward from 0x7C00
 
     push es
     push word .after
     retf
 
-.after
+.after:
+    ; Save boot drive number
+    mov [ebr_drive_number], dl  ; Store drive number provided by BIOS
 
-; let's read some data from the disk
-    mov [ebr_drive_number], dl  ;move the extended boot record drive number in the dl for reading
+    ; Show loading message
+    mov si, msg_loading         ; Load the message in the SI register
+    call puts                   ; Display loading message
 
-
-    ; show loading message
-    mov si, msg_loading         ; load the message in the si register
-    call puts                   ; call the function
-    jmp wait_key_and_reboot     ; call the function to keep the system waiting
-
-
+    ; Get disk parameters
     push es
-    mov ah, 08h
-    int 13h
-    jc floppy_error
+    mov ah, 08h                 ; BIOS function: get drive parameters
+    int 13h                     ; Call BIOS disk service
+    jc floppy_error             ; Jump to error handler if operation failed
     pop es
 
-    and cl, 0x3f
-    xor ch, ch
-    mov [bdb_sectors_per_track], cx
+    ; Extract sectors per track
+    and cl, 0x3f                ; Mask upper 2 bits (cylinder bits)
+    xor ch, ch                  ; Clear CH register
+    mov [bdb_sectors_per_track], cx  ; Store sectors per track
 
-    inc dh
-    mov [bdb_heads], dh
+    ; Extract number of heads
+    inc dh                      ; Heads are 0-based, so increment to get count
+    mov [bdb_heads], dh         ; Store number of heads
 
-    ;read fat root directory
-    mov ax, [bdb_sectors_per_fat]
-    mov bl, [bdb_fat_count]
-    xor bh, bh
-    mul bx
-    add ax, [bdb_reserved_sectors]
-    push ax
+    ; Calculate root directory location
+    ; First, compute FAT size: sectors_per_fat * fat_count
+    mov ax, [bdb_sectors_per_fat]  ; Load sectors per FAT
+    mov bl, [bdb_fat_count]        ; Load number of FATs
+    xor bh, bh                     ; Clear upper byte of BX
+    mul bx                         ; AX = sectors_per_fat * fat_count
+    add ax, [bdb_reserved_sectors] ; Add reserved sectors (boot sector)
+    push ax                        ; Save FAT location + reserved sectors
 
-    mov ax, [bdb_dir_entries_count]
-    shl ax, 5
-    xor dx, dx
-    div word [bdb_bytes_per_sector]
+    ; Calculate root directory size in sectors
+    mov ax, [bdb_dir_entries_count] ; Load number of directory entries
+    shl ax, 5                      ; Multiply by 32 (bytes per entry)
+    xor dx, dx                     ; Clear DX for division
+    div word [bdb_bytes_per_sector] ; Divide by sector size to get sectors
 
-    test dx, dx
-    jz .root_dir_after
-    inc ax
-
-
+    ; Round up if there's a remainder
+    test dx, dx                    ; Check if remainder is zero
+    jz .root_dir_after            ; If no remainder, skip increment
+    inc ax                        ; Increment to account for partial sector
 
 .root_dir_after:
-    mov cl, al
-    pop ax
-    mov dl, [ebr_drive_number]
-    mov bx, buffer
-    call disk_read
+    ; Read root directory into memory
+    mov cl, al                    ; Number of sectors to read (root directory size)
+    pop ax                        ; Restore starting sector (after FAT)
+    mov dl, [ebr_drive_number]    ; Load drive number
+    mov bx, buffer                ; Load destination buffer address
+    call disk_read                ; Read root directory sectors
 
-    xor bx, bx
-    mov di, buffer
-
-
+    ; Search for kernel file in root directory
+    xor bx, bx                    ; Clear BX (entry counter)
+    mov di, buffer                ; Point DI to start of directory buffer
 
 .search_kernel:
-    mov si, file_kernel_bin
-    mov cx, 11
-    push di
-    repe cmpsb
-    pop di
-    je .found_kernel
+    mov si, file_kernel_bin       ; Point SI to kernel filename
+    mov cx, 11                    ; Compare 11 characters (8.3 format)
+    push di                       ; Save current directory entry position
+    repe cmpsb                    ; Compare strings
+    pop di                        ; Restore directory entry position
+    je .found_kernel              ; Jump if kernel file found
 
-    add di, 32
-    inc bx
-    cmp bx, [bdb_dir_entries_count]
+    ; Move to next directory entry
+    add di, 32                    ; Each directory entry is 32 bytes
+    inc bx                        ; Increment entry counter
+    cmp bx, [bdb_dir_entries_count] ; Check if all entries searched
+    jl .search_kernel             ; Continue searching if more entries
 
-    jl .search_kernel
-
+    ; Kernel not found - display error
     jmp kernel_not_found_error
 
 .found_kernel:
-    mov ax, [di + 26]
+    ; Extract kernel cluster number from directory entry
+    mov ax, [di + 26]             ; Cluster number is at offset 26
+    mov [kernel_cluster], ax      ; Store kernel starting cluster
 
-    mov [kernel_cluster], ax
+    ; Read FAT into memory
+    mov ax, [bdb_reserved_sectors] ; Start of FAT (after boot sector)
+    mov bx, buffer                ; Destination buffer
+    mov cl, [bdb_sectors_per_fat] ; Number of FAT sectors to read
+    mov dl, [ebr_drive_number]    ; Drive number
+    call disk_read                ; Read FAT into buffer
 
-    mov ax, [bdb_reserved_sectors]
-    mov bx, buffer
-    mov cl, [bdb_sectors_per_fat]
-    mov dl, [ebr_drive_number]
-    call disk_read
-
-    mov bx, KERNEL_LOAD_SEGMENT
-    mov es, bx
-    mov bx, KERNEL_LOAD_OFFSET
+    ; Set up segment for kernel loading
+    mov bx, KERNEL_LOAD_SEGMENT   ; Load kernel segment
+    mov es, bx                    ; Set ES to kernel segment
+    mov bx, KERNEL_LOAD_OFFSET    ; Load kernel offset
 
 .load_kernel_loop:
-    mov ax, [kernel_cluster]
-    add ax, 31      ;hardcoded
+    ; Convert cluster to LBA address
+    mov ax, [kernel_cluster]      ; Load current cluster number
+    add ax, 31                    ; Add data area offset (hardcoded for FAT12)
 
+    ; Read cluster sector
+    mov cl, 1                     ; Read one sector
+    mov dl, [ebr_drive_number]    ; Drive number
+    call disk_read                ; Read cluster sector
 
-    mov cl, 1
-    mov dl, [ebr_drive_number]
-    call disk_read
-    add bx, [bdb_bytes_per_sector]
+    ; Advance buffer pointer
+    add bx, [bdb_bytes_per_sector] ; Move to next sector in memory
 
-    mov ax, [kernel_cluster]
-    mov cx, 3
-    mul cx
-    mov cx, 2
-    div cx
-    mov si, buffer
-    add si, ax
-    mov ax, [ds:si]
-    or dx, dx
-    jz .even
+    ; Find next cluster in FAT chain
+    mov ax, [kernel_cluster]      ; Load current cluster
+    mov cx, 3                     ; Multiply by 3 (each FAT12 entry is 1.5 bytes)
+    mul cx                        ; AX = cluster * 3
+    mov cx, 2                     ; Divide by 2 to get byte offset
+    div cx                        ; AX = byte offset in FAT
+
+    ; Calculate FAT entry address
+    mov si, buffer                ; Point to FAT buffer
+    add si, ax                    ; Add byte offset
+    mov ax, [ds:si]               ; Load FAT entry (2 bytes)
+
+    ; Check if cluster was even or odd
+    or dx, dx                     ; Check remainder from division
+    jz .even                      ; Jump if even cluster
 
 .odd:
-    shr dx, 4
-    jmp .next_cluster_after
+    shr ax, 4                     ; Odd cluster: shift right 4 bits
+    jmp .next_cluster_after       ; Continue processing
 
 .even:
-    and ax, 0x0FFF
+    and ax, 0x0FFF                ; Even cluster: mask upper 4 bits
 
 .next_cluster_after:
-    cmp ax, 0x0FF8
-    jae .read_finish
+    ; Check for end of cluster chain
+    cmp ax, 0x0FF8                ; Compare with end of chain marker
+    jae .read_finish              ; Jump if end of chain reached
 
-    mov [kernel_cluster], ax
-    jmp .load_kernel_loop
+    ; Continue with next cluster
+    mov [kernel_cluster], ax      ; Store next cluster number
+    jmp .load_kernel_loop         ; Continue loading
 
 .read_finish:
-    mov di, [ebr_drive_number]
-    mov ax, KERNEL_LOAD_SEGMENT
-    mov ds, ax
-    mov es, ax
+    ; Prepare for kernel execution
+    mov dl, [ebr_drive_number]    ; Pass drive number to kernel
+    mov ax, KERNEL_LOAD_SEGMENT   ; Set up segments for kernel
+    mov ds, ax                    ; Set data segment to kernel segment
+    mov es, ax                    ; Set extra segment to kernel segment
 
+    ; Jump to kernel entry point
     jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+
+    ; Fallback: reboot if kernel doesn't start
     jmp wait_key_and_reboot
-    cli
-    hlt
+    cli                           ; Disable interrupts
+    hlt                           ; Halt processor
 
 
 
@@ -235,55 +246,47 @@ floppy_error:
     call puts                          ; Display error message
     jmp wait_key_and_reboot            ; Jump to reboot handler
 
+kernel_not_found_error:
+    mov si, msg_kernel_not_found       ; Load kernel not found message
+    call puts                          ; Display error message
+    jmp wait_key_and_reboot            ; Jump to reboot handler
+
 wait_key_and_reboot:
     mov ah, 0                          ; BIOS function: wait for keypress
     int 16h                            ; Call BIOS keyboard service
     jmp 0FFFFh:0                       ; Jump to BIOS reset vector (reboot system)
-    cli                                ; disabel interrupt
-    hlt                                ; halt execution
+    cli                                ; Disable interrupts
+    hlt                                ; Halt execution
 
-kernel_not_found_error:
-    mov si, msg_kernel_not_found
-    call puts
-    jmp wait_key_and_reboot
 
 
 ; =============================================================================
 ; PUTS FUNCTION
 ; =============================================================================
 ;
-; Prints a null-terminated string to video
+; Prints a null-terminated string to video using BIOS teletype output
 ; Parameters:
-;   ds:si - pointer to string to print
+;   ds:si - pointer to null-terminated string to print
 
 puts:
-    push si                 ; push the si value in the stack to save it
-    push ax                 ; push the ax value in the stack to save it
+    push si                 ; Save SI register value
+    push ax                 ; Save AX register value
 
 .loop:
-    lodsb                   ; Load byte from [si] into al, increment si
-    or al, al               ; Check for end of string (al = 0)
-    jz .done
+    lodsb                   ; Load byte from [SI] into AL, increment SI
+    or al, al               ; Check for end of string (AL = 0)
+    jz .done                ; Jump to done if end of string reached
 
     mov ah, 0x0e            ; BIOS teletype output function
     mov bh, 0               ; Video page 0
-    int 0x10                ; BIOS call
+    int 0x10                ; Call BIOS video service
 
-    jmp .loop               ; jmp back and continue
+    jmp .loop               ; Continue with next character
 
 .done:
-    pop ax                  ; restore ax value from the stack
-    pop si                  ;vrestore si value from the stack
-    ret                     ; return from the routine
-
-
-; =============================================================================
-; SYSTEM CONTROL FUNCTIONS
-; =============================================================================
-
-.halt:
-    cli                                ; Disable interrupts to prevent exiting halt state
-    hlt                                ; Halt processor execution
+    pop ax                  ; Restore AX register value
+    pop si                  ; Restore SI register value
+    ret                     ; Return from function
 
 
 
@@ -333,23 +336,23 @@ lba_to_chs:
 
 disk_read:
     push ax                             ; Save registers that will be modified
-    push bx                             ; Save registers that will be modified
-    push cx                             ; Save registers that will be modified
-    push dx                             ; Save registers that will be modified
-    push di                             ; Save registers that will be modified
+    push bx                             ; Save BX register
+    push cx                             ; Save CX register
+    push dx                             ; Save DX register
+    push di                             ; Save DI register
 
-    push cx                             ; Save sector count (will be modified by lba_to_chs)
+    push cx                             ; Save sector count
     call lba_to_chs                     ; Convert LBA to CHS format
     pop ax                              ; AL = number of sectors to read
     mov ah, 02h                         ; BIOS function: read sectors
     mov di, 3                           ; Retry counter (3 attempts)
 
 .retry:
-    pusha                               ; Save all registers (BIOS may modify them)
-    stc                                 ; Set carry flag (some BIOSes don't)
+    pusha                               ; Save all registers
+    stc                                 ; Set carry flag (some BIOSes require this)
     int 13h                             ; Call BIOS disk service
-    jnc .done                           ; Jump if operation succeeded (carry flag clear)
-    
+    jnc .done                           ; Jump if operation succeeded
+
     ; Operation failed - retry
     popa                                ; Restore registers
     call disk_reset                     ; Reset disk controller
@@ -358,49 +361,51 @@ disk_read:
     jnz .retry                          ; Retry if attempts remaining
 
 .fail:
-    jmp floppy_error                    ; Jump to error handler if all retries fail
+    jmp floppy_error                    ; Jump to error handler
 
 .done:
     popa                                ; Restore registers saved by pusha
     
     pop di                              ; Restore original register values
-    pop dx                              ; Restore original register values
-    pop cx                              ; Restore original register values
-    pop bx                              ; Restore original register values
-    pop ax                              ; Restore original register values
+    pop dx                              ; Restore DX register
+    pop cx                              ; Restore CX register
+    pop bx                              ; Restore BX register
+    pop ax                              ; Restore AX register
     ret                                 ; Return from function
-
 
 ; Disk reset function
 ; Resets the disk controller using BIOS interrupt 13h
 ; Parameters: None
 ; Returns: None (carry flag indicates success/failure)
 disk_reset:
-    pusha                   ; Save all general-purpose registers
-    mov ah, 0               ; BIOS function: reset disk system
-    stc                     ; Set carry flag (some BIOSes require this)
-    int 13h                 ; Call BIOS disk service
-    jc floppy_error         ; Jump to error handler if reset failed (carry flag set)
-    popa                    ; Restore all general-purpose registers
-    ret                     ; Return from function
+    pusha                               ; Save all general-purpose registers
+    mov ah, 0                           ; BIOS function: reset disk system
+    stc                                 ; Set carry flag
+    int 13h                             ; Call BIOS disk service
+    jc floppy_error                     ; Jump to error handler if reset failed
+    popa                                ; Restore all general-purpose registers
+    ret                                 ; Return from function
 
 
 
 ; =============================================================================
-; DATA SECTION - MESSAGES
+; DATA SECTION - MESSAGES AND CONSTANTS
 ; =============================================================================
 
-msg_loading: db 'Qvantum Loading...', ENDL, 0
+msg_loading:            db 'Qvantum Loading...', ENDL, 0
 msg_floppy_read_failed: db 'Failed to read from floppy', ENDL, 0
-msg_kernel_not_found: db 'kernel nf', ENDL, 0
-file_kernel_bin: db 'KERNEL  BIN'
-kernel_cluster: dw 0 
-KERNEL_LOAD_SEGMENT equ 0x2000
-KERNEL_LOAD_OFFSET  equ 0
+msg_kernel_not_found:   db 'Kernel not found', ENDL, 0
+file_kernel_bin:        db 'KERNEL  BIN'        ; Kernel filename in 8.3 format
+kernel_cluster:         dw 0                    ; Storage for kernel starting cluster
+
+; Kernel loading address constants
+KERNEL_LOAD_SEGMENT     equ 0x2000              ; Segment where kernel will be loaded
+KERNEL_LOAD_OFFSET      equ 0                   ; Offset within segment
+
 
 
 ; =============================================================================
-; BOOT SIGNATURE
+; BOOT SIGNATURE AND BUFFER SPACE
 ; =============================================================================
 ;
 ; BIOS requires boot sectors to end with signature 0xAA55
@@ -409,4 +414,5 @@ KERNEL_LOAD_OFFSET  equ 0
 times 510-($-$$) db 0       ; Fill remainder of sector with zeros
 dw 0AA55h                   ; Boot signature (little endian)
 
+; Buffer space for FAT and directory operations
 buffer:

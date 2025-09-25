@@ -267,36 +267,64 @@ DirectoryEntry* findFile(const char* name){
 // - true:  File read successfully
 // - false: Failed to read file
 
-bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer){
-    bool loop = true;
-    // Start with the first cluster of the file
-    uint16_t currentCluster = fileEntry->FirstClusterLow;
+bool readFile(DirectoryEntry* fileEntry, FILE* disk, uint8_t* outputBuffer) {
+    if (fileEntry->FirstClusterLow == 0) {
+        // File is empty
+        return true;
+    }
     
-    // Follow the cluster chain until end-of-file marker is reached
-    do{
-        // Calculate LBA of current cluster (data area starts after root directory)
+    uint16_t currentCluster = fileEntry->FirstClusterLow;
+    uint32_t bytesRead = 0;
+    uint32_t fileSize = fileEntry->Size;
+    
+    while (currentCluster < 0xFF8) { // While not EOF
+        if (currentCluster >= 0xFF0) {
+            // Bad cluster or other special markers
+            break;
+        }
+        
+        // Calculate LBA of current cluster
         uint32_t lba = g_RootDirectoryEnd + (currentCluster - 2) * g_BootSector.SectorsPerCluster;
-        // Read the current cluster
-        loop = loop && readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer);
-        // Advance output buffer pointer by cluster size
-        outputBuffer += g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
-
-        // Calculate FAT index for current cluster (FAT12 uses 12-bit entries)
+        
+        // Calculate how much to read for this cluster
+        uint32_t bytesToRead = g_BootSector.SectorsPerCluster * g_BootSector.BytesPerSector;
+        if (bytesRead + bytesToRead > fileSize) {
+            bytesToRead = fileSize - bytesRead;
+        }
+        
+        // Read the current cluster (or partial cluster if needed)
+        if (!readSectors(disk, lba, g_BootSector.SectorsPerCluster, outputBuffer)) {
+            return false;
+        }
+        
+        outputBuffer += bytesToRead;
+        bytesRead += bytesToRead;
+        
+        if (bytesRead >= fileSize) {
+            break; // File completely read
+        }
+        
+        // Get next cluster from FAT
         uint32_t fatIndex = currentCluster * 3 / 2;
         
-        // Read next cluster from FAT (handles 12-bit entries)
-        if(currentCluster % 2 == 0){
-            // Even cluster: use low 12 bits of 16-bit value
-            currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) & 0x0FFF;
-        }else{
-            // Odd cluster: use high 12 bits of 16-bit value
-            currentCluster = (*(uint16_t*)(g_Fat + fatIndex)) >> 4;
+        // Read the 16-bit value containing two FAT12 entries
+        uint16_t fatValue = *(uint16_t*)(g_Fat + fatIndex);
+        
+        // Extract the correct 12-bit entry
+        if (currentCluster % 2 == 0) {
+            currentCluster = fatValue & 0x0FFF; // Even cluster: take low 12 bits
+        } else {
+            currentCluster = fatValue >> 4;     // Odd cluster: take high 12 bits
         }
-
-    // Continue until end-of-file cluster (0xFF8-0xFFF) is reached
-    }while(loop && currentCluster < 0x0FF8);
+        
+        // Check for bad cluster
+        if (currentCluster == 0xFF7) {
+            fprintf(stderr, "Bad cluster encountered!\n");
+            return false;
+        }
+    }
     
-    return loop;
+    return true;
 }
 
 // =============================================================================

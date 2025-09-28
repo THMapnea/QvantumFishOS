@@ -6,7 +6,7 @@
 ; Loaded by BIOS at address 0x7C00 and must be exactly 512 bytes
 
 org 0x0                  ; BIOS loads bootloader at this address
-bits 16                     ; 16-bit real mode
+bits 16                  ; 16-bit real mode
 
 %define ENDL 0x0D, 0x0A 
 

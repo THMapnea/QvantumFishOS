@@ -394,9 +394,9 @@ disk_reset:
 
 msg_loading:            db 'Qvantum Loading...', ENDL, 0
 msg_floppy_read_failed: db 'Failed to read from floppy', ENDL, 0
-msg_kernel_not_found:   db 'Kernel not found', ENDL, 0
-file_kernel_bin:        db 'KERNEL  BIN'        ; Kernel filename in 8.3 format
-kernel_cluster:         dw 0                    ; Storage for kernel starting cluster
+msg_kernel_not_found:   db 'STAGE2.bin file not found', ENDL, 0
+file_kernel_bin:        db 'STAGE2  BIN'        ; stage 2 filename in 8.3 format
+kernel_cluster:         dw 0                    ; Storage for stage 2 starting cluster
 
 ; Kernel loading address constants
 KERNEL_LOAD_SEGMENT     equ 0x2000              ; Segment where kernel will be loaded

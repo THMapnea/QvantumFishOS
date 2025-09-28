@@ -1,8 +1,8 @@
 # =============================================================================
-# NBOS BOOTLOADER BUILD SYSTEM
+# NBOS BOOTLOADER STAGE1 BUILD SYSTEM
 # =============================================================================
 #
-# Makefile for building the NBOS bootloader from assembly source
+# Makefile for building the NBOS stage1 bootloader from assembly source
 # Handles compilation of boot sector and provides clean target
 
 # =============================================================================

@@ -1,9 +1,9 @@
 # =============================================================================
-# NBOS BOOTLOADER BUILD SYSTEM
+# NBOS BOOTLOADER STAGE2 BUILD SYSTEM
 # =============================================================================
 #
-# Makefile for building the NBOS bootloader from assembly source
-# Handles compilation of boot sector and provides clean target
+# Makefile for building the NBOS stage2 bootloader from assembly source
+# Handles compilation of stage2 bootloader and provides clean target
 
 # =============================================================================
 # BUILD CONFIGURATION
@@ -22,16 +22,16 @@ ASM?=nasm                  # Assembler to use (default: nasm)
 # BUILD TARGETS
 # =============================================================================
 
-# Primary build target - builds stage1 bootloader
+# Primary build target - builds stage2 bootloader
 all: stage2
 
-# Target for building stage1 bootloader binary
+# Target for building stage2 bootloader binary
 stage2: $(BUILD_DIR)/stage2.bin
 
-# Rule to assemble boot.asm into stage1.bin
+# Rule to assemble main.asm into stage2.bin
 # Uses NASM assembler to create raw binary output
 $(BUILD_DIR)/stage2.bin:
-	$(ASM) main.asm -f bin -o $(BUILD_DIR)/stage2.bin  # Assemble boot.asm to binary format
+	$(ASM) main.asm -f bin -o $(BUILD_DIR)/stage2.bin  # Assemble main.asm to binary format
 
 # =============================================================================
 # CLEANUP TARGET
@@ -39,4 +39,4 @@ $(BUILD_DIR)/stage2.bin:
 
 # Clean target - removes all build artifacts
 clean:
-	rm -f $(BUILD_DIR)/stage2.bin  # Delete the stage1 bootloader binary
+	rm -f $(BUILD_DIR)/stage2.bin  # Delete the stage2 bootloader binary

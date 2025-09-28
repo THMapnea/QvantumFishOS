@@ -16,22 +16,22 @@ ASM?=nasm                  # Assembler to use (default: nasm)
 # PHONY TARGET DECLARATIONS
 # =============================================================================
 
-.phony: all clean           # Declare phony targets (not actual files)
+.phony: all kernel clean           # Declare phony targets (not actual files)
 
 # =============================================================================
 # BUILD TARGETS
 # =============================================================================
 
 # Primary build target - builds stage1 bootloader
-all: stage1
+all: kernel
 
 # Target for building stage1 bootloader binary
-stage1: $(BUILD_DIR)/stage1.bin
+kernel: $(BUILD_DIR)/kernel.bin
 
 # Rule to assemble boot.asm into stage1.bin
 # Uses NASM assembler to create raw binary output
-$(BUILD_DIR)/stage1.bin:
-	$(ASM) boot.asm -f bin -o $(BUILD_DIR)/stage1.bin  # Assemble boot.asm to binary format
+$(BUILD_DIR)/kernel.bin:
+	$(ASM) main.asm -f bin -o $(BUILD_DIR)/kernel.bin  # Assemble boot.asm to binary format
 
 # =============================================================================
 # CLEANUP TARGET
@@ -39,4 +39,4 @@ $(BUILD_DIR)/stage1.bin:
 
 # Clean target - removes all build artifacts
 clean:
-	rm -f $(BUILD_DIR)/stage1.bin  # Delete the stage1 bootloader binary
+	rm -f $(BUILD_DIR)/kernel.bin  # Delete the stage1 bootloader binary
